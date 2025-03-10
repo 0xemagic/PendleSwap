@@ -1,0 +1,3 @@
+[submodule "PendleSwap/lib/forge-std"]
+	path = PendleSwap/lib/forge-std
+	url = https://github.com/foundry-rs/forge-std
