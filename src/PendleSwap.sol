@@ -3,9 +3,10 @@ pragma solidity ^0.8.28;
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {PendleRouterV4} from "pendle-core-v2-public/contracts/Router/PendleRouterV4.sol";
 
 contract PendleSwap is Ownable, ReentrancyGuard {
-    address constant pendleRouter = 0x888888888889758F76e7103c6CbF23ABbF58F946;
+    address constant PENDLE_ROUTER = 0x888888888889758F76e7103c6CbF23ABbF58F946;
 
     /// @notice Supported assets in
     enum AssetType {
@@ -147,7 +148,7 @@ contract PendleSwap is Ownable, ReentrancyGuard {
             }
         }
 
-        pendleRouter.call(abi.encodePacked(selector, functionData));
+        PENDLE_ROUTER.call(abi.encodePacked(selector, functionData));
         return 0;
         // bytes4 selector = _getSelector("swapExactTokenForPt(address,address,uint256)");
     }
@@ -212,7 +213,7 @@ contract PendleSwap is Ownable, ReentrancyGuard {
             }
         }
 
-        pendleRouter.call(abi.encodePacked(selector, functionData));
+        PENDLE_ROUTER.call(abi.encodePacked(selector, functionData));
         return 0;
 
     }
