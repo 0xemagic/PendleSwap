@@ -7,4 +7,6 @@ foundry-out/
 .vscode/
 out/
 .env
-lib/
+lib/*
+!lib/.gitignore
+!lib/pendle-core-v2-public/
