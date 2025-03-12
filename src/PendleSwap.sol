@@ -94,6 +94,8 @@ contract PendleSwap is Ownable, ReentrancyGuard {
                 userBalances[msg.sender][inputToken] = 0;
                 supportedAssetTypes[address(_SY)] = AssetType.SY;
             } else if (toAssetType == AssetType.PT) {
+                (, _PT, ) = IPMarketV3(supportedMarkets[inputToken])
+                    .readTokens();
                 (uint256 netPtOut, ) = pendleRouter.swapExactTokenForPt(
                     address(this),
                     supportedMarkets[inputToken],
@@ -103,12 +105,29 @@ contract PendleSwap is Ownable, ReentrancyGuard {
                         inputToken,
                         userBalances[msg.sender][inputToken]
                     ),
-                    createTokenInputSimple(USDC_ADDRESS, 1000e6),
                     createEmptyLimitOrderData()
                 );
-            } else if (toAssetType == AssetType.YT) {} else if (
-                toAssetType == AssetType.LP
-            ) {
+                userBalances[msg.sender][address(_PT)] += netPtOut;
+                userBalances[msg.sender][inputToken] = 0;
+                supportedAssetTypes[address(_PT)] = AssetType.PT;
+            } else if (toAssetType == AssetType.YT) {
+                (, , _YT) = IPMarketV3(supportedMarkets[inputToken])
+                    .readTokens();
+                (uint256 netYtOut, ) = pendleRouter.swapExactTokenForYt(
+                    address(this),
+                    supportedMarkets[inputToken],
+                    0,
+                    createDefaultApproxParams(),
+                    createTokenInputSimple(
+                        inputToken,
+                        userBalances[msg.sender][inputToken]
+                    ),
+                    createEmptyLimitOrderData()
+                );
+                userBalances[msg.sender][address(_YT)] += netYtOut;
+                userBalances[msg.sender][inputToken] = 0;
+                supportedAssetTypes[address(_YT)] = AssetType.YT;
+            } else if (toAssetType == AssetType.LP) {
                 selector = _getSelector(
                     "addLiquiditySingleToken(address,address,uint256,ApproxParams,TokenInput,LimitOrderData)"
                 );
