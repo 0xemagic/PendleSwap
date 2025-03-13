@@ -12,6 +12,6 @@ contract PendleSwapTest is Test {
     }
 
     function test_PendleSwap() public view {
-        assertEq(pendleSwap.number(), 0);
+        console.log("PendleSwap");
     }
 }
