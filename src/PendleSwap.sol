@@ -96,9 +96,11 @@ contract PendleSwap is Ownable, ReentrancyGuard {
         marketToken[market][TokenType.LP] = market;
     }
 
-    /// @notice Deposits a supported asset
-    /// @param inputToken The asset to deposit
-    /// @param amount The amount to deposit
+    /**
+     * @notice Deposits a supported asset
+     * @param inputToken The asset to deposit
+     * @param amount The amount to deposit
+     */
     function deposit(address inputToken, uint256 amount) public nonReentrant {
         require(
             supportedMarkets[inputToken] != address(0),
@@ -114,6 +116,10 @@ contract PendleSwap is Ownable, ReentrancyGuard {
         emit Deposited(msg.sender, supportedAssetTypes[inputToken], amount);
     }
 
+    /**
+     * @notice Withdraws a user's balance for a specific asset
+     * @param withdrawToken The asset to withdraw
+     */
     function withdraw(address withdrawToken) public nonReentrant {
         require(withdrawToken != address(0), UnsupportedAsset());
         require(
@@ -152,10 +158,12 @@ contract PendleSwap is Ownable, ReentrancyGuard {
             userBalances[msg.sender][inputToken] > 0,
             InsufficientBalance()
         );
+        //Approve tokens to router
         IERC20(inputToken).forceApprove(
             address(pendleRouter),
             userBalances[msg.sender][inputToken]
         );
+        //Convert from tokens to SY
         if (fromTokenType == TokenType.UNDERLYING) {
             syAmount = pendleRouter.mintSyFromToken(
                 address(this),
@@ -193,10 +201,12 @@ contract PendleSwap is Ownable, ReentrancyGuard {
                 createEmptyLimitOrderData()
             );
         }
+        //Approve SY to router
         IERC20( marketToken[market][TokenType.SY]).forceApprove(
             address(pendleRouter),
             syAmount
         );
+        //Convert from SY to destination tokens
         if (toAssetType == TokenType.UNDERLYING) {
             (, address assetAddress, ) = IStandardizedYield(marketToken[market][TokenType.SY]).assetInfo();
             outputAmount = pendleRouter.redeemSyToToken(
