@@ -103,17 +103,18 @@ contract PendleSwapTest is Test {
     /**
      * @notice Test withdrawal functionality
      */
-    function test_Withdraw() public {
-        uint256 beforeBalance = IERC20(USDe).balanceOf(address(this));
-        pendleSwap.deposit(USDe, DEPOSIT_AMOUNT);
-        pendleSwap.withdraw(USDe);
-        uint256 afterBalance = IERC20(USDe).balanceOf(address(this));
-        uint256 balance = pendleSwap.userBalances(address(this), USDe);
+    function testFuzz_Withdraw(uint8 tokenType) public {
+        address ioToken = tokenAddresses[PendleSwap.TokenType(tokenType % 5)];
+        uint256 beforeBalance = IERC20(ioToken).balanceOf(address(this));
+        pendleSwap.deposit(ioToken, DEPOSIT_AMOUNT);
+        pendleSwap.withdraw(ioToken);
+        uint256 afterBalance = IERC20(ioToken).balanceOf(address(this));
+        uint256 balance = pendleSwap.userBalances(address(this), ioToken);
         assertEq(afterBalance, beforeBalance);
         assertEq(balance, 0);
 
         vm.expectRevert(PendleSwap.InsufficientBalance.selector);
-        pendleSwap.withdraw(USDe);
+        pendleSwap.withdraw(ioToken);
 
         vm.expectRevert(PendleSwap.UnsupportedAsset.selector);
         pendleSwap.withdraw(address(0));
@@ -160,8 +161,6 @@ contract PendleSwapTest is Test {
         PendleSwap.TokenType fromTokenType = PendleSwap.TokenType(from % 5);
         PendleSwap.TokenType toTokenType = PendleSwap.TokenType(to % 5);
         vm.assume(fromTokenType != toTokenType);
-        vm.assume(fromTokenType <= PendleSwap.TokenType.LP);
-        vm.assume(toTokenType <= PendleSwap.TokenType.LP);
 
         pendleSwap.swap(
             tokenAddresses[fromTokenType],
