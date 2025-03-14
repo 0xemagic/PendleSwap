@@ -2,14 +2,18 @@
 pragma solidity ^0.8.28;
 
 import {Test, console2} from "forge-std/Test.sol";
-import {PendleSwap} from "../src/PendleSwap.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {IPMarket} from "pendle-core-v2-public/contracts/interfaces/IPMarket.sol";
 import {IStandardizedYield} from "pendle-core-v2-public/contracts/interfaces/IStandardizedYield.sol";
 import {IPPrincipalToken} from "pendle-core-v2-public/contracts/interfaces/IPPrincipalToken.sol";
 import {IPYieldToken} from "pendle-core-v2-public/contracts/interfaces/IPYieldToken.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {PendleSwap} from "../src/PendleSwap.sol";
 
+/**
+ * @title PendleSwapTest
+ * @notice Foundry test suite for the PendleSwap contract
+ */
 contract PendleSwapTest is Test {
     PendleSwap public pendleSwap;
 
@@ -24,13 +28,16 @@ contract PendleSwapTest is Test {
 
     mapping(PendleSwap.TokenType => address) public tokenAddresses;
 
+    /**
+     * @notice Set up the test environment
+     */
     function setUp() public {
         pendleSwap = new PendleSwap();
 
-        // Setup supported assets
+        // Register supported assets
         pendleSwap.setSupportedMarket(USDe, MARKET);
 
-        // Deal some tokens to the test contrac
+        // Fund test contract with tokens
         deal(USDe, address(this), 10000000 * 10 ** 18); // 1M USDC
         deal(SY, address(this), 10000000 * 10 ** 18);
         deal(PT, address(this), 10000000 * 10 ** 18);
@@ -44,6 +51,7 @@ contract PendleSwapTest is Test {
         IERC20(YT).approve(address(pendleSwap), type(uint256).max);
         IERC20(LP).approve(address(pendleSwap), type(uint256).max);
 
+        // Map token types to addresses
         tokenAddresses[PendleSwap.TokenType.UNDERLYING] = USDe;
         tokenAddresses[PendleSwap.TokenType.SY] = SY;
         tokenAddresses[PendleSwap.TokenType.PT] = PT;
@@ -51,6 +59,9 @@ contract PendleSwapTest is Test {
         tokenAddresses[PendleSwap.TokenType.LP] = LP;
     }
 
+    /**
+     * @notice Test setting a supported market
+     */
     function test_setSupportedMarket() public {
         vm.expectRevert(PendleSwap.UnsupportedAsset.selector);
         pendleSwap.setSupportedMarket(address(0), MARKET);
@@ -71,6 +82,9 @@ contract PendleSwapTest is Test {
         pendleSwap.setSupportedMarket(address(USDe), MARKET);
     }
 
+    /**
+     * @notice Test deposit functionality
+     */
     function test_Deposit() public {
         uint256 beforeBalance = IERC20(USDe).balanceOf(address(this));
         pendleSwap.deposit(USDe, DEPOSIT_AMOUNT);
@@ -86,6 +100,9 @@ contract PendleSwapTest is Test {
         pendleSwap.deposit(address(0), DEPOSIT_AMOUNT);
     }
 
+    /**
+     * @notice Test withdrawal functionality
+     */
     function test_Withdraw() public {
         uint256 beforeBalance = IERC20(USDe).balanceOf(address(this));
         pendleSwap.deposit(USDe, DEPOSIT_AMOUNT);
@@ -105,17 +122,29 @@ contract PendleSwapTest is Test {
         pendleSwap.withdraw(Bob);
     }
 
+    /**
+     * @notice Test fuzzing conversion between asset types
+     */
     function testFuzz_Convert(uint8 from, uint8 to) public {
-        PendleSwap.TokenType fromTokenType = PendleSwap.TokenType(from%5);
-        PendleSwap.TokenType toTokenType = PendleSwap.TokenType(to%5);
+        PendleSwap.TokenType fromTokenType = PendleSwap.TokenType(from % 5);
+        PendleSwap.TokenType toTokenType = PendleSwap.TokenType(to % 5);
         vm.assume(fromTokenType != toTokenType);
         vm.assume(fromTokenType <= PendleSwap.TokenType.LP);
         vm.assume(toTokenType <= PendleSwap.TokenType.LP);
 
         pendleSwap.deposit(tokenAddresses[fromTokenType], DEPOSIT_AMOUNT);
         pendleSwap.convert(tokenAddresses[fromTokenType], toTokenType);
-        assertEq(pendleSwap.userBalances(address(this), tokenAddresses[fromTokenType]), 0);
-        assertGt(pendleSwap.userBalances(address(this), tokenAddresses[toTokenType]), 0);
+        assertEq(
+            pendleSwap.userBalances(
+                address(this),
+                tokenAddresses[fromTokenType]
+            ),
+            0
+        );
+        assertGt(
+            pendleSwap.userBalances(address(this), tokenAddresses[toTokenType]),
+            0
+        );
 
         vm.expectRevert(PendleSwap.UnsupportedAsset.selector);
         pendleSwap.convert(address(0), toTokenType);
@@ -124,15 +153,24 @@ contract PendleSwapTest is Test {
         pendleSwap.convert(Bob, toTokenType);
     }
 
+    /**
+     * @notice Test fuzzing swap functionality
+     */
     function testFuzz_Swap(uint8 from, uint8 to) public {
-        PendleSwap.TokenType fromTokenType = PendleSwap.TokenType(from%5);
-        PendleSwap.TokenType toTokenType = PendleSwap.TokenType(to%5);
+        PendleSwap.TokenType fromTokenType = PendleSwap.TokenType(from % 5);
+        PendleSwap.TokenType toTokenType = PendleSwap.TokenType(to % 5);
         vm.assume(fromTokenType != toTokenType);
         vm.assume(fromTokenType <= PendleSwap.TokenType.LP);
         vm.assume(toTokenType <= PendleSwap.TokenType.LP);
 
-        pendleSwap.swap(tokenAddresses[fromTokenType], toTokenType, DEPOSIT_AMOUNT);
-        assertGt(IERC20(tokenAddresses[toTokenType]).balanceOf(address(this)), 0);
-        
+        pendleSwap.swap(
+            tokenAddresses[fromTokenType],
+            toTokenType,
+            DEPOSIT_AMOUNT
+        );
+        assertGt(
+            IERC20(tokenAddresses[toTokenType]).balanceOf(address(this)),
+            0
+        );
     }
 }

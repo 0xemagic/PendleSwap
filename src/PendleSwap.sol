@@ -3,7 +3,7 @@ pragma solidity ^0.8.28;
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {console2} from "forge-std/Test.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import {IPAllActionV3} from "pendle-core-v2-public/contracts/interfaces/IPAllActionV3.sol";
 import {IPMarket} from "pendle-core-v2-public/contracts/interfaces/IPMarket.sol";
@@ -11,19 +11,21 @@ import {IStandardizedYield} from "pendle-core-v2-public/contracts/interfaces/ISt
 import {IPPrincipalToken} from "pendle-core-v2-public/contracts/interfaces/IPPrincipalToken.sol";
 import {IPYieldToken} from "pendle-core-v2-public/contracts/interfaces/IPYieldToken.sol";
 import {IPMarketFactoryV3} from "pendle-core-v2-public/contracts/interfaces/IPMarketFactoryV3.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "pendle-core-v2-public/contracts/interfaces/IPAllActionTypeV3.sol";
 
-
+/**
+ * @title PendleSwap
+ * @notice A contract for swapping assets within the Pendle ecosystem.
+ * @dev Provides functions for depositing, withdrawing, converting and swapping assets using the Pendle protocol.
+ */
 contract PendleSwap is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
+    /// @notice Pendle router instance
     IPAllActionV3 pendleRouter =
         IPAllActionV3(0x888888888889758F76e7103c6CbF23ABbF58F946);
-    IPMarketFactoryV3 pendleMarketFactoryV3 =
-        IPMarketFactoryV3(0x1A6fCc85557BC4fB7B534ed835a03EF056552D52);
 
-    /// @notice Supported assets in
+    /// @notice Enum representing different types of supported tokens
     enum TokenType {
         UNDERLYING,
         SY,
@@ -31,22 +33,42 @@ contract PendleSwap is Ownable, ReentrancyGuard {
         YT,
         LP
     }
+
+    /// @notice Errors
     error UnsupportedMarket();
     error UnsupportedAsset();
     error InvalidDepositAmount();
     error InsufficientBalance();
     error InvalidSwap();
 
-    constructor() Ownable(msg.sender) {}
 
-    /// @notice User balances
+    /// @notice User balances mapping: user -> token -> balance
     mapping(address => mapping(address => uint256)) public userBalances;
+    
+    /// @notice Mapping to track supported asset types
     mapping(address => TokenType) public supportedAssetTypes;
+    
+    /// @notice Mapping to track supported markets
     mapping(address => address) public supportedMarkets;
+    
+    /// @notice Mapping to track market token relationships
     mapping(address => mapping(TokenType => address)) public marketToken;
 
-    event Deposited(address indexed user, address assetType, uint256 amount);
+    /**
+     * @notice Constructor
+     */
+    constructor() Ownable(msg.sender) {}
 
+    event Deposited(address indexed user, TokenType tokenType, uint256 amount);
+    event Withdrawn(address indexed user, TokenType tokenType, uint256 amount);
+    event Converted(address indexed user, TokenType fromTokenType, TokenType toTokenType, uint256 amount, uint256 outputAmount);
+    event Swapped(address indexed user, TokenType fromTokenType, TokenType toTokenType);
+
+    /**
+     * @notice Sets a supported market for an asset
+     * @param asset The asset to associate with a market
+     * @param market The corresponding market address
+     */
     function setSupportedMarket(
         address asset,
         address market
@@ -89,7 +111,7 @@ contract PendleSwap is Ownable, ReentrancyGuard {
         );
 
         userBalances[msg.sender][inputToken] += amount;
-        emit Deposited(msg.sender, inputToken, amount);
+        emit Deposited(msg.sender, supportedAssetTypes[inputToken], amount);
     }
 
     function withdraw(address withdrawToken) public nonReentrant {
@@ -111,13 +133,19 @@ contract PendleSwap is Ownable, ReentrancyGuard {
         );
 
         userBalances[msg.sender][withdrawToken] = 0;
-        // emit Withdrawn(msg.sender, withdrawToken, userBalances[msg.sender][withdrawToken]);
+        emit Withdrawn(msg.sender, supportedAssetTypes[withdrawToken], userBalances[msg.sender][withdrawToken]);
     }
 
+    /**
+     * @notice Converts a user's balance from one asset type to another within the Pendle ecosystem
+     * @param inputToken The asset to convert from
+     * @param toAssetType The target asset type
+     */
     function convert(address inputToken, TokenType toAssetType) public {
         TokenType fromTokenType = supportedAssetTypes[inputToken];
         address market = supportedMarkets[inputToken];
         uint256 syAmount;
+        uint256 outputAmount;
         require(inputToken != address(0), UnsupportedAsset());
         require(market != address(0), UnsupportedMarket());
         require(
@@ -171,17 +199,17 @@ contract PendleSwap is Ownable, ReentrancyGuard {
         );
         if (toAssetType == TokenType.UNDERLYING) {
             (, address assetAddress, ) = IStandardizedYield(marketToken[market][TokenType.SY]).assetInfo();
-            uint256 netTokenOut = pendleRouter.redeemSyToToken(
+            outputAmount = pendleRouter.redeemSyToToken(
                 address(this),
                 marketToken[market][TokenType.SY],
                 syAmount,
                 createTokenOutputSimple(assetAddress, 0)
             );
-            userBalances[msg.sender][assetAddress] += netTokenOut;
+            userBalances[msg.sender][assetAddress] += outputAmount;
         } else if (toAssetType == TokenType.SY) {
             userBalances[msg.sender][marketToken[market][TokenType.SY]] += syAmount;
         } else if (toAssetType == TokenType.PT) {
-            (uint256 netPtOut, ) = pendleRouter.swapExactSyForPt(
+            (outputAmount, ) = pendleRouter.swapExactSyForPt(
                 address(this),
                 supportedMarkets[inputToken],
                 syAmount,
@@ -189,9 +217,9 @@ contract PendleSwap is Ownable, ReentrancyGuard {
                 createDefaultApproxParams(),
                 createEmptyLimitOrderData()
             );
-            userBalances[msg.sender][marketToken[market][TokenType.PT]] += netPtOut;
+            userBalances[msg.sender][marketToken[market][TokenType.PT]] += outputAmount;
         } else if (toAssetType == TokenType.YT) {
-            (uint256 netYtOut, ) = pendleRouter.swapExactSyForYt(
+            (outputAmount, ) = pendleRouter.swapExactSyForYt(
                 address(this),
                 supportedMarkets[inputToken],
                 syAmount,
@@ -199,9 +227,9 @@ contract PendleSwap is Ownable, ReentrancyGuard {
                 createDefaultApproxParams(),
                 createEmptyLimitOrderData()
             );
-            userBalances[msg.sender][marketToken[market][TokenType.YT]] += netYtOut;
+            userBalances[msg.sender][marketToken[market][TokenType.YT]] += outputAmount;
         } else if (toAssetType == TokenType.LP) {
-            (uint256 netLpOut, ) = pendleRouter.addLiquiditySingleSy(
+            (outputAmount, ) = pendleRouter.addLiquiditySingleSy(
                 address(this),
                 market,
                 syAmount,
@@ -209,13 +237,19 @@ contract PendleSwap is Ownable, ReentrancyGuard {
                 createDefaultApproxParams(),
                 createEmptyLimitOrderData()
             );
-            userBalances[msg.sender][market] += netLpOut;
+            userBalances[msg.sender][market] += outputAmount;
         }
         userBalances[msg.sender][inputToken] = 0;
+        emit Converted(msg.sender, fromTokenType, toAssetType, userBalances[msg.sender][inputToken], outputAmount);
     }
 
 
-
+    /**
+     * @notice Swaps an asset into another type using Pendle market
+     * @param inputToken The asset to swap from
+     * @param toAssetType The target asset type
+     * @param amount The amount to swap
+     */
     function swap(
         address inputToken,
         TokenType toAssetType,
@@ -224,5 +258,6 @@ contract PendleSwap is Ownable, ReentrancyGuard {
         deposit(inputToken, amount);
         convert(inputToken, toAssetType);
         withdraw(marketToken[supportedMarkets[inputToken]][toAssetType]);
+        emit Swapped(msg.sender, supportedAssetTypes[inputToken], toAssetType);
     }
 }
